@@ -4,3 +4,4 @@ chromadb
 pydantic
 python-multipart
 sqlalchemy
+pymysql
