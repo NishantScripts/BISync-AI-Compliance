@@ -8,6 +8,8 @@ interface HistoryItem {
   status: string;
 }
 
+const BACKEND_URL = "https://bisync-ai-compliance.onrender.com";
+
 export default function App() {
   const [searchInput, setSearchInput] = useState("");
   const [matchedRule, setMatchedRule] = useState(
@@ -88,7 +90,7 @@ export default function App() {
         setError("");
 
         try {
-          const response = await fetch("http://127.0.0.1:8000/query-rule", {
+          const response = await fetch(`${BACKEND_URL}/query-rule`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ query: file.name || "Uploaded Product", top_k: 1 }),
@@ -135,7 +137,7 @@ export default function App() {
       setCapturedImage(imageDataUrl);
 
       try {
-        const response = await fetch("http://127.0.0.1:8000/query-rule", {
+        const response = await fetch(`${BACKEND_URL}/query-rule`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query: "ISI Mark Helmet Standard", top_k: 1 }),
@@ -168,7 +170,7 @@ export default function App() {
     setError("");
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/query-rule", {
+      const response = await fetch(`${BACKEND_URL}/query-rule`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: searchInput, top_k: 1 }),
