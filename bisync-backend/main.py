@@ -126,7 +126,8 @@ class SafeGeminiEmbedder(EmbeddingFunction):
             return [[0.0] * 768 for _ in input] # Fallback dummy vector
         
         response = genai.embed_content(
-            model="models/text-embedding-004",
+            model="models/embedding-001",
+            
             content=input,
             task_type="retrieval_document"
         )
