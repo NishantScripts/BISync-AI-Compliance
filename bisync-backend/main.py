@@ -16,7 +16,7 @@ from typing import Optional
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from openai import OpenAI
+import google.generativeai as genai
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("bisync")
@@ -35,48 +35,68 @@ app.add_middleware(
 )
 
 # --------------------------------------------------------------------------
-# OpenRouter API Integration
+# Gemini multi-key rotation pool (RESTORED - 100% Stable)
 # --------------------------------------------------------------------------
-# FIXED: Using the EXACT live experimental free model slug for Google Gemini on OpenRouter
-def call_openrouter(parts: list, model_name: str = "google/gemini-flash-1.5-exp:free", json_mode: bool = False):
-    """Calls OpenRouter API for inference."""
-    api_key = os.environ.get("OPENROUTER_API_KEY")
-    if not api_key:
-        raise RuntimeError("NO_OPENROUTER_KEY")
+class KeyPool:
+    """Round-robins across GEMINI_API_KEYS, benching keys that fail."""
+    def __init__(self, env_var: str = "GEMINI_API_KEYS"):
+        raw = os.environ.get(env_var, "")
+        self.keys = [k.strip() for k in raw.split(",") if k.strip()]
+        if not self.keys:
+            log.warning("No GEMINI_API_KEYS set — running in MOCK/demo-only mode.")
+        self.idx = 0
+        self.bench: dict[str, float] = {}
+        self.bench_seconds = 60
 
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=api_key,
-    )
+    def _available_keys(self):
+        now = time.time()
+        return [k for k in self.keys if self.bench.get(k, 0) <= now] or self.keys
 
-    # Convert parts to OpenRouter (OpenAI compatible) format
-    content_list = []
-    for p in parts:
-        if isinstance(p, str):
-            content_list.append({"type": "text", "text": p})
-        elif isinstance(p, dict) and "data" in p:
-            mime = p.get("mime_type", "image/jpeg")
-            content_list.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:{mime};base64,{p['data']}"}
-            })
+    def current(self) -> Optional[str]:
+        avail = self._available_keys()
+        if not avail:
+            return None
+        return avail[self.idx % len(avail)]
 
-    try:
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=[{"role": "user", "content": content_list}],
-        )
-        
-        result_text = response.choices[0].message.content
-        
-        # Clean markdown syntax if model wraps JSON response
-        if json_mode:
-             result_text = result_text.replace("```json", "").replace("```", "").strip()
-             
-        return result_text
-    except Exception as e:
-        log.error(f"OpenRouter call failed: {e}")
-        raise RuntimeError(f"OPENROUTER_ERROR: {e}")
+    def rotate(self):
+        self.idx += 1
+
+    def penalize(self, key: str):
+        self.bench[key] = time.time() + self.bench_seconds
+        log.warning(f"Benching Gemini key ...{key[-4:]} for {self.bench_seconds}s")
+
+pool = KeyPool()
+
+def _is_quota_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(t in msg for t in ["429", "quota", "rate limit", "resource_exhausted", "permission", "401", "403"])
+
+def call_gemini(parts: list, model_name: str = "gemini-1.5-flash", json_mode: bool = False, max_retries: Optional[int] = None):
+    """Calls Gemini with automatic key rotation on failure."""
+    if not pool.keys:
+        raise RuntimeError("NO_API_KEYS")
+
+    attempts = max_retries or len(pool.keys)
+    last_err: Optional[Exception] = None
+
+    for _ in range(attempts):
+        key = pool.current()
+        if key is None:
+            break
+        try:
+            genai.configure(api_key=key)
+            gen_config = {"response_mime_type": "application/json"} if json_mode else {}
+            model = genai.GenerativeModel(model_name, generation_config=gen_config)
+            response = model.generate_content(parts)
+            return response.text
+        except Exception as e:
+            last_err = e
+            log.error(f"Gemini call failed on key ...{key[-4:]}: {e}")
+            if _is_quota_error(e):
+                pool.penalize(key)
+            pool.rotate()
+
+    raise RuntimeError(f"ALL_KEYS_EXHAUSTED: {last_err}")
 
 
 # --------------------------------------------------------------------------
@@ -88,7 +108,6 @@ from chromadb.utils import embedding_functions
 CHROMA_PATH = os.environ.get("CHROMA_PATH", "./chroma_store")
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
 
-# Using Chroma's default lightweight embedder. No Pytorch, no memory crashes.
 embedder = embedding_functions.DefaultEmbeddingFunction()
 
 rulebook = chroma_client.get_or_create_collection(
@@ -164,7 +183,7 @@ def health():
     return {
         "status": "ok",
         "time": datetime.now(timezone.utc).isoformat(),
-        "openrouter_key_configured": bool(os.environ.get("OPENROUTER_API_KEY")),
+        "gemini_keys_configured": len(pool.keys),
         "rulebook_docs": rulebook.count(),
     }
 
@@ -185,7 +204,7 @@ mismatched stamp fonts, and label placement anomalies typical of counterfeits.
 Respond with ONLY the JSON object, no markdown."""
 
         parts = [prompt, {"mime_type": file.content_type or "image/jpeg", "data": b64}]
-        raw = call_openrouter(parts, json_mode=True)
+        raw = call_gemini(parts, json_mode=True)
         result = json.loads(raw)
         result["mode"] = "live"
         result["hash"] = compliance_hash(result)
@@ -210,7 +229,7 @@ summary (3 sentences, {"Hindi" if language == "hi" else "English"}).
 Respond with ONLY the JSON object, no markdown."""
 
         parts = [prompt, {"mime_type": "application/pdf", "data": b64}]
-        raw = call_openrouter(parts, json_mode=True)
+        raw = call_gemini(parts, json_mode=True)
         result = json.loads(raw)
         result["mode"] = "live"
         result["hash"] = compliance_hash(result)
@@ -255,7 +274,7 @@ Use ONLY this retrieved context from the bis_rulebook database:
 
 User question: {req.message}"""
 
-        answer = call_openrouter([prompt], json_mode=False)
+        answer = call_gemini([prompt], json_mode=False)
         return {
             "mode": "live",
             "answer": answer.strip(),
