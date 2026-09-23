@@ -37,8 +37,8 @@ app.add_middleware(
 # --------------------------------------------------------------------------
 # OpenRouter API Integration
 # --------------------------------------------------------------------------
-# FIXED: Using Google's valid free model slug on OpenRouter to fix the 404 error
-def call_openrouter(parts: list, model_name: str = "google/gemini-1.5-flash:free", json_mode: bool = False):
+# FIXED: Using the EXACT live experimental free model slug for Google Gemini on OpenRouter
+def call_openrouter(parts: list, model_name: str = "google/gemini-flash-1.5-exp:free", json_mode: bool = False):
     """Calls OpenRouter API for inference."""
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
