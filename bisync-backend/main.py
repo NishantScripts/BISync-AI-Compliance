@@ -1,18 +1,6 @@
 """
 BISync — FastAPI backend
 Team CodeX99 · SIH26107 — AI-Powered Intelligent Assistant for Indian Standards & BIS Services
-
-Endpoints:
-  POST /scan-image   -> multimodal vision analysis (product ID + ISI/CM-L forgery check)
-  POST /parse-pdf     -> extract + summarize BIS/lab-report PDFs
-  POST /chat           -> RAG chat over ChromaDB (bis_rulebook) + Gemini completion
-  POST /query-rule    -> raw ChromaDB vector query
-  GET  /health         -> liveness + key-pool status
-
-Key feature: automatic Gemini API key rotation. Set GEMINI_API_KEYS as a
-comma-separated list in the environment; on 429 / quota / auth errors the
-client transparently retries with the next key so a hackathon demo never
-dies mid-request.
 """
 
 import os
@@ -50,10 +38,8 @@ app.add_middleware(
 # --------------------------------------------------------------------------
 import google.generativeai as genai
 
-
 class KeyPool:
     """Round-robins across GEMINI_API_KEYS, benching keys that fail."""
-
     def __init__(self, env_var: str = "GEMINI_API_KEYS"):
         raw = os.environ.get(env_var, "")
         self.keys = [k.strip() for k in raw.split(",") if k.strip()]
@@ -80,20 +66,15 @@ class KeyPool:
         self.bench[key] = time.time() + self.bench_seconds
         log.warning(f"Benching Gemini key ...{key[-4:]} for {self.bench_seconds}s")
 
-
 pool = KeyPool()
-
 
 def _is_quota_error(exc: Exception) -> bool:
     msg = str(exc).lower()
     return any(t in msg for t in ["429", "quota", "rate limit", "resource_exhausted", "permission", "401", "403"])
 
-
 def call_gemini(parts: list, model_name: str = "gemini-1.5-flash", json_mode: bool = False, max_retries: Optional[int] = None):
     """
     Calls Gemini with automatic key rotation on failure.
-    `parts` is a list of prompt parts (text and/or {"mime_type", "data"} dicts for images/pdf bytes).
-    Raises RuntimeError if every key in the pool has been exhausted.
     """
     if not pool.keys:
         raise RuntimeError("NO_API_KEYS")
@@ -111,7 +92,7 @@ def call_gemini(parts: list, model_name: str = "gemini-1.5-flash", json_mode: bo
             model = genai.GenerativeModel(model_name, generation_config=gen_config)
             response = model.generate_content(parts)
             return response.text
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             last_err = e
             log.error(f"Gemini call failed on key ...{key[-4:]}: {e}")
             if _is_quota_error(e):
@@ -130,8 +111,12 @@ from chromadb.utils import embedding_functions
 CHROMA_PATH = os.environ.get("CHROMA_PATH", "./chroma_store")
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
 
-embedder = embedding_functions.SentenceTransformerEmbeddingFunction(
-    model_name="all-MiniLM-L6-v2"
+# FIXED: Use Google's lightweight Cloud Embedding API instead of local RAM
+gemini_keys = os.environ.get("GEMINI_API_KEYS", "").split(",")
+active_key = gemini_keys[0].strip() if gemini_keys and gemini_keys[0].strip() else ""
+
+embedder = embedding_functions.GoogleGenerativeAiEmbeddingFunction(
+    api_key=active_key
 )
 
 rulebook = chroma_client.get_or_create_collection(
@@ -149,7 +134,6 @@ STANDARDS_SEED = [
     {"id": "IS8828", "text": "IS 8828: Miniature circuit breakers (MCBs) for AC circuits. Specifies tripping characteristics, breaking capacity, and endurance requirements.", "meta": {"standard": "IS 8828", "product": "MCBs"}},
 ]
 
-
 def seed_rulebook_if_empty():
     if rulebook.count() == 0:
         rulebook.add(
@@ -159,8 +143,8 @@ def seed_rulebook_if_empty():
         )
         log.info(f"Seeded bis_rulebook with {len(STANDARDS_SEED)} standards.")
 
-
 seed_rulebook_if_empty()
+
 
 # --------------------------------------------------------------------------
 # Models
@@ -169,7 +153,6 @@ class ChatRequest(BaseModel):
     message: str
     language: str = "en"  # "en" | "hi"
     role: str = "consumer"  # "consumer" | "auditor"
-
 
 class QueryRuleRequest(BaseModel):
     query: str
@@ -182,7 +165,6 @@ class QueryRuleRequest(BaseModel):
 def compliance_hash(payload: dict) -> str:
     raw = json.dumps(payload, sort_keys=True).encode()
     return hashlib.sha256(raw).hexdigest()[:16]
-
 
 def mock_scan_result(reason: str) -> dict:
     return {
@@ -214,7 +196,6 @@ def health():
         "rulebook_docs": rulebook.count(),
     }
 
-
 @app.post("/scan-image")
 async def scan_image(file: UploadFile = File(...), role: str = Form("consumer"), language: str = Form("en")):
     try:
@@ -238,10 +219,9 @@ Respond with ONLY the JSON object, no markdown."""
         result["hash"] = compliance_hash(result)
         return result
 
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log.error(f"/scan-image failed: {e}")
         return mock_scan_result(str(e))
-
 
 @app.post("/parse-pdf")
 async def parse_pdf(file: UploadFile = File(...), role: str = Form("auditor"), language: str = Form("en")):
@@ -264,7 +244,7 @@ Respond with ONLY the JSON object, no markdown."""
         result["hash"] = compliance_hash(result)
         return result
 
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log.error(f"/parse-pdf failed: {e}")
         return {
             "mode": "mock_fallback",
@@ -280,7 +260,6 @@ Respond with ONLY the JSON object, no markdown."""
             "summary": "The charger largely meets IS 13250 insulation requirements, but the thermal cut-off test was not documented and should be re-submitted before certification.",
             "hash": compliance_hash({"seed": str(e), "t": time.time()}),
         }
-
 
 @app.post("/chat")
 def chat(req: ChatRequest):
@@ -311,7 +290,7 @@ User question: {req.message}"""
             "sources": [m.get("standard") for m in metas],
         }
 
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log.error(f"/chat failed: {e}")
         return {
             "mode": "mock_fallback",
@@ -327,7 +306,6 @@ User question: {req.message}"""
             "sources": ["IS 9873"],
         }
 
-
 @app.post("/query-rule")
 def query_rule(req: QueryRuleRequest):
     try:
@@ -342,10 +320,9 @@ def query_rule(req: QueryRuleRequest):
                 for d, m, dist in zip(docs, metas, dists)
             ],
         }
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log.error(f"/query-rule failed: {e}")
         raise HTTPException(status_code=500, detail=f"Rulebook query failed: {e}")
-
 
 if __name__ == "__main__":
     import uvicorn

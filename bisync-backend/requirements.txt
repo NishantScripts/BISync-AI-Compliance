@@ -4,4 +4,3 @@ python-multipart
 google-generativeai
 chromadb
 pydantic
-sentence-transformers
