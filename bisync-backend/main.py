@@ -37,8 +37,8 @@ app.add_middleware(
 # --------------------------------------------------------------------------
 # OpenRouter API Integration
 # --------------------------------------------------------------------------
-# FIXED: Using 100% free Llama 3.2 Vision model to avoid $0 balance crash
-def call_openrouter(parts: list, model_name: str = "meta-llama/llama-3.2-11b-vision-instruct:free", json_mode: bool = False):
+# FIXED: Using Google's valid free model slug on OpenRouter to fix the 404 error
+def call_openrouter(parts: list, model_name: str = "google/gemini-1.5-flash:free", json_mode: bool = False):
     """Calls OpenRouter API for inference."""
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
