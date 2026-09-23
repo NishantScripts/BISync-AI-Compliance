@@ -1,9 +1,9 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import {
   ShieldCheck, ShieldAlert, ShieldX, Camera, Upload, FileText, MessageSquare,
-  BarChart3, Globe, Wifi, WifiOff, ChevronRight, Send, X, Download,
+  BarChart3, Wifi, WifiOff, ChevronRight, Send, X, Download,
   AlertTriangle, CheckCircle2, Loader2, ScanLine, Video, VideoOff,
-  Building2, User, Hash, Clock, FileSearch, Sparkles, ChevronDown,
+  Building2, User, Hash, Clock, FileSearch, Sparkles,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -68,7 +68,7 @@ interface AuditEntry {
   hash: string;
 }
 
-const COPY = {
+const COPY: Record<string, any> = {
   en: {
     appName: "BISync", tagline: "AI Compliance Copilot for Indian Standards",
     tabs: { vision: "AI Vision Inspector", pdf: "Lab PDF Parser", chat: "BIS AI Chatbot", history: "Audit History & Analytics" },
@@ -103,7 +103,7 @@ const COPY = {
     noHistory: "अभी तक कोई स्कैन नहीं। निरीक्षण चलाएँ।",
     verdictPass: "अनुरूप", verdictCaution: "सत्यापन आवश्यक", verdictFail: "गैर-अनुरूप",
   },
-} as const;
+};
 
 // ---------------------------------------------------------------------------
 // Mock fallbacks (demo resilience)
@@ -143,7 +143,7 @@ const MOCK_CHAT_REPLIES: Record<string, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// API helper — tries live backend, falls back to mock on any failure
+// API helper
 // ---------------------------------------------------------------------------
 async function apiCall<T>(path: string, options: RequestInit, mock: T, timeoutMs = 12000): Promise<{ data: T; live: boolean }> {
   const controller = new AbortController();
@@ -163,7 +163,7 @@ async function apiCall<T>(path: string, options: RequestInit, mock: T, timeoutMs
 // ---------------------------------------------------------------------------
 // Small building blocks
 // ---------------------------------------------------------------------------
-function VerdictBadge({ verdict, t }: { verdict: Verdict; t: typeof COPY["en"] }) {
+function VerdictBadge({ verdict, t }: { verdict: Verdict; t: any }) {
   const map = {
     PASS: { icon: ShieldCheck, cls: "text-emerald-400 border-emerald-400/40 bg-emerald-400/10", label: t.verdictPass },
     CAUTION: { icon: ShieldAlert, cls: "text-amber-400 border-amber-400/40 bg-amber-400/10", label: t.verdictCaution },
@@ -212,7 +212,7 @@ function GlassCard({ children, className = "" }: { children: React.ReactNode; cl
 // ---------------------------------------------------------------------------
 // Vision Inspector Tab
 // ---------------------------------------------------------------------------
-function VisionInspector({ role, lang, t, onLogged }: { role: Role; lang: Lang; t: typeof COPY["en"]; onLogged: (e: AuditEntry) => void }) {
+function VisionInspector({ role, lang, t, onLogged }: { role: Role; lang: Lang; t: any; onLogged: (e: AuditEntry) => void }) {
   const [preview, setPreview] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -433,7 +433,7 @@ function VisionInspector({ role, lang, t, onLogged }: { role: Role; lang: Lang; 
 // ---------------------------------------------------------------------------
 // PDF Parser Tab
 // ---------------------------------------------------------------------------
-function PdfParser({ role, lang, t, onLogged }: { role: Role; lang: Lang; t: typeof COPY["en"]; onLogged: (e: AuditEntry) => void }) {
+function PdfParser({ role, lang, t, onLogged }: { role: Role; lang: Lang; t: any; onLogged: (e: AuditEntry) => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [parsing, setParsing] = useState(false);
   const [result, setResult] = useState<PdfResult | null>(null);
@@ -456,7 +456,7 @@ function PdfParser({ role, lang, t, onLogged }: { role: Role; lang: Lang; t: typ
     onLogged({ id: data.hash, type: "pdf", timestamp: new Date().toISOString(), label: f.name, standard: data.matched_standard, verdict: data.overall_status, hash: data.hash });
   };
 
-  const statusColor = { compliant: "text-emerald-400", non_compliant: "text-rose-400", not_tested: "text-slate-500", partial: "text-amber-400" };
+  const statusColor: Record<string, string> = { compliant: "text-emerald-400", non_compliant: "text-rose-400", not_tested: "text-slate-500", partial: "text-amber-400" };
 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.8fr_1.2fr]">
@@ -543,7 +543,7 @@ function PdfParser({ role, lang, t, onLogged }: { role: Role; lang: Lang; t: typ
 // ---------------------------------------------------------------------------
 // Chatbot Tab
 // ---------------------------------------------------------------------------
-function Chatbot({ role, lang, t }: { role: Role; lang: Lang; t: typeof COPY["en"] }) {
+function Chatbot({ role, lang, t }: { role: Role; lang: Lang; t: any }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
@@ -634,7 +634,7 @@ function Chatbot({ role, lang, t }: { role: Role; lang: Lang; t: typeof COPY["en
 // ---------------------------------------------------------------------------
 // Audit History Tab
 // ---------------------------------------------------------------------------
-function AuditHistory({ entries, t }: { entries: AuditEntry[]; t: typeof COPY["en"] }) {
+function AuditHistory({ entries, t }: { entries: AuditEntry[]; t: any }) {
   const passCount = entries.filter((e) => e.verdict === "PASS" || e.verdict === "compliant").length;
   const cautionCount = entries.filter((e) => e.verdict === "CAUTION" || e.verdict === "partial").length;
   const failCount = entries.filter((e) => e.verdict === "FAIL" || e.verdict === "non_compliant").length;
@@ -694,7 +694,7 @@ function AuditHistory({ entries, t }: { entries: AuditEntry[]; t: typeof COPY["e
 // ---------------------------------------------------------------------------
 // Shell: Sidebar + Header
 // ---------------------------------------------------------------------------
-function Sidebar({ tab, setTab, t }: { tab: Tab; setTab: (t: Tab) => void; t: typeof COPY["en"] }) {
+function Sidebar({ tab, setTab, t }: { tab: Tab; setTab: (t: Tab) => void; t: any }) {
   const items: { id: Tab; icon: React.ElementType; label: string }[] = [
     { id: "vision", icon: Camera, label: t.tabs.vision },
     { id: "pdf", icon: FileText, label: t.tabs.pdf },
@@ -737,7 +737,7 @@ function Sidebar({ tab, setTab, t }: { tab: Tab; setTab: (t: Tab) => void; t: ty
 }
 
 function Header({ role, setRole, lang, setLang, cloud, t }: {
-  role: Role; setRole: (r: Role) => void; lang: Lang; setLang: (l: Lang) => void; cloud: CloudStatus; t: typeof COPY["en"];
+  role: Role; setRole: (r: Role) => void; lang: Lang; setLang: (l: Lang) => void; cloud: CloudStatus; t: any;
 }) {
   const cloudCfg = {
     online: { icon: Wifi, cls: "text-emerald-400", label: t.cloud.online },
