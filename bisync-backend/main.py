@@ -106,18 +106,33 @@ def call_gemini(parts: list, model_name: str = "gemini-1.5-flash", json_mode: bo
 # ChromaDB — bis_rulebook collection
 # --------------------------------------------------------------------------
 import chromadb
-from chromadb.utils import embedding_functions
+from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
 
 CHROMA_PATH = os.environ.get("CHROMA_PATH", "./chroma_store")
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
 
-# FIXED: Use Google's lightweight Cloud Embedding API instead of local RAM
 gemini_keys = os.environ.get("GEMINI_API_KEYS", "").split(",")
 active_key = gemini_keys[0].strip() if gemini_keys and gemini_keys[0].strip() else ""
 
-embedder = embedding_functions.GoogleGenerativeAiEmbeddingFunction(
-    api_key=active_key
-)
+# FIXED: Custom safe wrapper to bypass ChromaDB's broken header bug
+class SafeGeminiEmbedder(EmbeddingFunction):
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        if self.api_key:
+            genai.configure(api_key=self.api_key)
+
+    def __call__(self, input: Documents) -> Embeddings:
+        if not self.api_key:
+            return [[0.0] * 768 for _ in input] # Fallback dummy vector
+        
+        response = genai.embed_content(
+            model="models/text-embedding-004",
+            content=input,
+            task_type="retrieval_document"
+        )
+        return response['embedding']
+
+embedder = SafeGeminiEmbedder(active_key)
 
 rulebook = chroma_client.get_or_create_collection(
     name="bis_rulebook",
