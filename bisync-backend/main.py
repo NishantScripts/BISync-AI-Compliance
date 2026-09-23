@@ -73,9 +73,7 @@ def _is_quota_error(exc: Exception) -> bool:
     return any(t in msg for t in ["429", "quota", "rate limit", "resource_exhausted", "permission", "401", "403"])
 
 def call_gemini(parts: list, model_name: str = "gemini-1.5-flash", json_mode: bool = False, max_retries: Optional[int] = None):
-    """
-    Calls Gemini with automatic key rotation on failure.
-    """
+    """Calls Gemini with automatic key rotation on failure."""
     if not pool.keys:
         raise RuntimeError("NO_API_KEYS")
 
@@ -106,34 +104,13 @@ def call_gemini(parts: list, model_name: str = "gemini-1.5-flash", json_mode: bo
 # ChromaDB — bis_rulebook collection
 # --------------------------------------------------------------------------
 import chromadb
-from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
+from chromadb.utils import embedding_functions
 
 CHROMA_PATH = os.environ.get("CHROMA_PATH", "./chroma_store")
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
 
-gemini_keys = os.environ.get("GEMINI_API_KEYS", "").split(",")
-active_key = gemini_keys[0].strip() if gemini_keys and gemini_keys[0].strip() else ""
-
-# FIXED: Custom safe wrapper to bypass ChromaDB's broken header bug
-class SafeGeminiEmbedder(EmbeddingFunction):
-    def __init__(self, api_key: str):
-        self.api_key = api_key
-        if self.api_key:
-            genai.configure(api_key=self.api_key)
-
-    def __call__(self, input: Documents) -> Embeddings:
-        if not self.api_key:
-            return [[0.0] * 768 for _ in input] # Fallback dummy vector
-        
-        response = genai.embed_content(
-            model="models/embedding-001",
-            
-            content=input,
-            task_type="retrieval_document"
-        )
-        return response['embedding']
-
-embedder = SafeGeminiEmbedder(active_key)
+# FIXED: Using Chroma's default lightweight embedder. No Pytorch, no Google API bugs.
+embedder = embedding_functions.DefaultEmbeddingFunction()
 
 rulebook = chroma_client.get_or_create_collection(
     name="bis_rulebook",
