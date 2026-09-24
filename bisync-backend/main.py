@@ -4,19 +4,18 @@ Team CodeX99 · SIH26107 — AI-Powered Intelligent Assistant for Indian Standar
 """
 
 import os
-import io
 import json
 import time
 import base64
 import hashlib
 import logging
+import requests
 from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from openai import OpenAI
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("bisync")
@@ -28,51 +27,67 @@ app = FastAPI(title="BISync API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten to the Vercel domain in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # --------------------------------------------------------------------------
-# OpenRouter API Integration (Stable Free Vision)
+# Direct REST API Integration (Bypassing Deprecated SDKs)
 # --------------------------------------------------------------------------
-def call_openrouter(parts: list, model_name: str = "google/gemini-2.0-flash-exp:free", json_mode: bool = False):
-    """Calls OpenRouter API for inference."""
-    api_key = os.environ.get("OPENROUTER_API_KEY")
-    if not api_key:
-        raise RuntimeError("NO_OPENROUTER_KEY")
+def call_gemini_direct(parts: list, model_name: str = "gemini-1.5-flash", json_mode: bool = False):
+    """Hits Google Gemini REST API directly to avoid SDK deprecation issues."""
+    api_keys_str = os.environ.get("GEMINI_API_KEYS", "")
+    keys = [k.strip() for k in api_keys_str.split(",") if k.strip()]
+    
+    if not keys:
+        raise RuntimeError("NO_GEMINI_API_KEY_FOUND_IN_ENV")
 
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=api_key,
-    )
+    # Use the first key for direct call
+    current_key = keys[0]
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={current_key}"
 
-    content_list = []
+    # Format payload exactly as Google REST API expects
+    formatted_contents = []
     for p in parts:
         if isinstance(p, str):
-            content_list.append({"type": "text", "text": p})
+            formatted_contents.append({"text": p})
         elif isinstance(p, dict) and "data" in p:
             mime = p.get("mime_type", "image/jpeg")
-            content_list.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:{mime};base64,{p['data']}"}
+            formatted_contents.append({
+                "inline_data": {
+                    "mime_type": mime,
+                    "data": p["data"]
+                }
             })
 
+    payload = {
+        "contents": [{"parts": formatted_contents}]
+    }
+
+    if json_mode:
+        payload["generationConfig"] = {"responseMimeType": "application/json"}
+
     try:
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=[{"role": "user", "content": content_list}],
-        )
+        response = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=30)
         
-        result_text = response.choices[0].message.content
+        if response.status_code != 200:
+            log.error(f"Google API Error: {response.status_code} - {response.text}")
+            raise RuntimeError(f"GEMINI_REST_ERROR: {response.status_code} | {response.text}")
+
+        data = response.json()
+        result_text = data["candidates"][0]["content"]["parts"][0]["text"]
+        
         if json_mode:
              result_text = result_text.replace("```json", "").replace("```", "").strip()
              
         return result_text
+
     except Exception as e:
-        log.error(f"OpenRouter call failed: {e}")
-        raise RuntimeError(f"OPENROUTER_ERROR: {e}")
+        log.error(f"Direct API call failed: {e}")
+        raise RuntimeError(f"DIRECT_CALL_FAILED: {e}")
 
 
 # --------------------------------------------------------------------------
@@ -83,7 +98,6 @@ from chromadb.utils import embedding_functions
 
 CHROMA_PATH = os.environ.get("CHROMA_PATH", "./chroma_store")
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
-
 embedder = embedding_functions.DefaultEmbeddingFunction()
 
 rulebook = chroma_client.get_or_create_collection(
@@ -136,7 +150,7 @@ def compliance_hash(payload: dict) -> str:
 def mock_scan_result(reason: str) -> dict:
     return {
         "mode": "mock_fallback",
-        "reason": reason,
+        "reason": str(reason),
         "product_category": "Two-Wheeler Helmet",
         "matched_standard": "IS 4151",
         "isi_mark_detected": True,
@@ -159,7 +173,7 @@ def health():
     return {
         "status": "ok",
         "time": datetime.now(timezone.utc).isoformat(),
-        "openrouter_key_configured": bool(os.environ.get("OPENROUTER_API_KEY")),
+        "api_keys_configured": bool(os.environ.get("GEMINI_API_KEYS")),
         "rulebook_docs": rulebook.count(),
     }
 
@@ -180,7 +194,10 @@ mismatched stamp fonts, and label placement anomalies typical of counterfeits.
 Respond with ONLY the JSON object, no markdown."""
 
         parts = [prompt, {"mime_type": file.content_type or "image/jpeg", "data": b64}]
-        raw = call_openrouter(parts, json_mode=True)
+        
+        # Using Direct REST API Call
+        raw = call_gemini_direct(parts, json_mode=True)
+        
         result = json.loads(raw)
         result["mode"] = "live"
         result["hash"] = compliance_hash(result)
@@ -205,7 +222,7 @@ summary (3 sentences, {"Hindi" if language == "hi" else "English"}).
 Respond with ONLY the JSON object, no markdown."""
 
         parts = [prompt, {"mime_type": "application/pdf", "data": b64}]
-        raw = call_openrouter(parts, json_mode=True)
+        raw = call_gemini_direct(parts, json_mode=True)
         result = json.loads(raw)
         result["mode"] = "live"
         result["hash"] = compliance_hash(result)
@@ -250,7 +267,7 @@ Use ONLY this retrieved context from the bis_rulebook database:
 
 User question: {req.message}"""
 
-        answer = call_openrouter([prompt], json_mode=False)
+        answer = call_gemini_direct([prompt], json_mode=False)
         return {
             "mode": "live",
             "answer": answer.strip(),
