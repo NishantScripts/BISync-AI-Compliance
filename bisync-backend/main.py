@@ -34,10 +34,10 @@ app.add_middleware(
 )
 
 # --------------------------------------------------------------------------
-# Direct REST API Integration (Smart Auth Routing)
+# Direct REST API Integration (Universal Auth Header)
 # --------------------------------------------------------------------------
 def call_gemini_direct(parts: list, model_name: str = "gemini-1.5-flash", json_mode: bool = False):
-    """Hits Google Gemini REST API directly with smart auth routing."""
+    """Hits Google Gemini REST API directly using the universal x-goog-api-key header."""
     api_keys_str = os.environ.get("GEMINI_API_KEYS", "")
     keys = [k.strip() for k in api_keys_str.split(",") if k.strip()]
     
@@ -45,16 +45,13 @@ def call_gemini_direct(parts: list, model_name: str = "gemini-1.5-flash", json_m
         raise RuntimeError("NO_GEMINI_API_KEY_FOUND_IN_ENV")
 
     current_key = keys[0]
-    headers = {"Content-Type": "application/json"}
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
     
-    # Automatically route auth based on token format
-    if current_key.startswith("AIza"):
-        # Standard API Key goes in URL
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={current_key}"
-    else:
-        # OAuth/Access Tokens (like AQ...) go in Authorization header
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
-        headers["Authorization"] = f"Bearer {current_key}"
+    # FIXED: Universal Google API Key header (Works for both AIza... and AQ... formats)
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": current_key
+    }
 
     # Format payload exactly as Google REST API expects
     formatted_contents = []
