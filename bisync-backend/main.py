@@ -34,20 +34,27 @@ app.add_middleware(
 )
 
 # --------------------------------------------------------------------------
-# Direct REST API Integration (Bypassing Deprecated SDKs)
+# Direct REST API Integration (Smart Auth Routing)
 # --------------------------------------------------------------------------
 def call_gemini_direct(parts: list, model_name: str = "gemini-1.5-flash", json_mode: bool = False):
-    """Hits Google Gemini REST API directly to avoid SDK deprecation issues."""
+    """Hits Google Gemini REST API directly with smart auth routing."""
     api_keys_str = os.environ.get("GEMINI_API_KEYS", "")
     keys = [k.strip() for k in api_keys_str.split(",") if k.strip()]
     
     if not keys:
         raise RuntimeError("NO_GEMINI_API_KEY_FOUND_IN_ENV")
 
-    # Use the first key for direct call
     current_key = keys[0]
+    headers = {"Content-Type": "application/json"}
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={current_key}"
+    # Automatically route auth based on token format
+    if current_key.startswith("AIza"):
+        # Standard API Key goes in URL
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={current_key}"
+    else:
+        # OAuth/Access Tokens (like AQ...) go in Authorization header
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+        headers["Authorization"] = f"Bearer {current_key}"
 
     # Format payload exactly as Google REST API expects
     formatted_contents = []
@@ -71,7 +78,7 @@ def call_gemini_direct(parts: list, model_name: str = "gemini-1.5-flash", json_m
         payload["generationConfig"] = {"responseMimeType": "application/json"}
 
     try:
-        response = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=30)
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
         
         if response.status_code != 200:
             log.error(f"Google API Error: {response.status_code} - {response.text}")
@@ -195,7 +202,6 @@ Respond with ONLY the JSON object, no markdown."""
 
         parts = [prompt, {"mime_type": file.content_type or "image/jpeg", "data": b64}]
         
-        # Using Direct REST API Call
         raw = call_gemini_direct(parts, json_mode=True)
         
         result = json.loads(raw)
