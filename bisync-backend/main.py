@@ -36,10 +36,10 @@ app.add_middleware(
 )
 
 # --------------------------------------------------------------------------
-# Groq API Integration (Lightning Fast & Free Vision - 90b Preview)
+# Groq API Integration (Using Active Qwen 3.8 27B Vision Model)
 # --------------------------------------------------------------------------
-def call_vision_api(parts: list, model_name: str = "llama-3.2-90b-vision-preview", json_mode: bool = False):
-    """Hits Groq API to get a highly reliable Free Vision Model."""
+def call_vision_api(parts: list, model_name: str = "qwen/qwen3.8-27b", json_mode: bool = False):
+    """Hits Groq API using the active Qwen vision model."""
     api_key = os.environ.get("GROQ_API_KEY")
     
     if not api_key:
