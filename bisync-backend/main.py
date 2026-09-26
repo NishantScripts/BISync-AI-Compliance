@@ -9,13 +9,16 @@ import time
 import base64
 import hashlib
 import logging
-import requests
 from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+# Naya Official Google GenAI SDK
+from google import genai
+from google.genai import types
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("bisync")
@@ -34,67 +37,52 @@ app.add_middleware(
 )
 
 # --------------------------------------------------------------------------
-# Direct REST API Integration (Strict AIza Format Failsafe)
+# New Google GenAI SDK Integration
 # --------------------------------------------------------------------------
 def call_gemini_direct(parts: list, model_name: str = "gemini-1.5-flash", json_mode: bool = False):
-    """Hits Google Gemini REST API directly with a strict AIza key format check."""
+    """Hits Google Gemini using the new official google-genai SDK."""
     api_keys_str = os.environ.get("GEMINI_API_KEYS", "")
     keys = [k.strip() for k in api_keys_str.split(",") if k.strip()]
     
     if not keys:
         raise RuntimeError("NO_GEMINI_API_KEY_FOUND_IN_ENV")
 
-    current_key = keys[0]
-    
-    # 🚨 FAILSAFE: Strictly block anything that is not a real API Key
-    if not current_key.startswith("AIza"):
-        error_msg = f"INVALID_KEY_FORMAT: Gemini API keys MUST start with 'AIza'. You are using an invalid token starting with '{current_key[:5]}...'. Please generate a FRESH key."
-        log.error(error_msg)
-        raise RuntimeError(error_msg)
+    # Initialize the new SDK client
+    client = genai.Client(api_key=keys[0])
 
-    # Standard URL format for AIza API keys
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={current_key}"
-    headers = {"Content-Type": "application/json"}
-
-    # Format payload exactly as Google REST API expects
+    # Format multimodal contents for the new SDK
     formatted_contents = []
     for p in parts:
         if isinstance(p, str):
-            formatted_contents.append({"text": p})
+            formatted_contents.append(p)
         elif isinstance(p, dict) and "data" in p:
             mime = p.get("mime_type", "image/jpeg")
-            formatted_contents.append({
-                "inline_data": {
-                    "mime_type": mime,
-                    "data": p["data"]
-                }
-            })
+            img_bytes = base64.b64decode(p["data"])
+            formatted_contents.append(
+                types.Part.from_bytes(data=img_bytes, mime_type=mime)
+            )
 
-    payload = {
-        "contents": [{"parts": formatted_contents}]
-    }
-
+    # Setup config for JSON mode if requested
+    config = types.GenerateContentConfig(temperature=0.2)
     if json_mode:
-        payload["generationConfig"] = {"responseMimeType": "application/json"}
+        config.response_mime_type = "application/json"
 
     try:
-        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        response = client.models.generate_content(
+            model=model_name,
+            contents=formatted_contents,
+            config=config
+        )
         
-        if response.status_code != 200:
-            log.error(f"Google API Error: {response.status_code} - {response.text}")
-            raise RuntimeError(f"GEMINI_REST_ERROR: {response.status_code} | {response.text}")
-
-        data = response.json()
-        result_text = data["candidates"][0]["content"]["parts"][0]["text"]
-        
+        result_text = response.text
         if json_mode:
              result_text = result_text.replace("```json", "").replace("```", "").strip()
              
         return result_text
 
     except Exception as e:
-        log.error(f"Direct API call failed: {e}")
-        raise RuntimeError(f"DIRECT_CALL_FAILED: {e}")
+        log.error(f"GenAI SDK call failed: {e}")
+        raise RuntimeError(f"GENAI_SDK_FAILED: {e}")
 
 
 # --------------------------------------------------------------------------
