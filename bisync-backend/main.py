@@ -16,7 +16,7 @@ from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# Using standard OpenAI SDK to call OpenRouter
+# Using standard OpenAI SDK to call Groq (OpenAI Compatible)
 from openai import OpenAI
 
 logging.basicConfig(level=logging.INFO)
@@ -36,21 +36,21 @@ app.add_middleware(
 )
 
 # --------------------------------------------------------------------------
-# OpenRouter API Integration (Bypassing Google Auth Issues)
+# Groq API Integration (Lightning Fast & Free Vision)
 # --------------------------------------------------------------------------
-def call_vision_api(parts: list, model_name: str = "google/gemini-2.0-flash-exp:free", json_mode: bool = False):
-    """Hits OpenRouter API to get Gemini Vision without Google's token issues."""
-    api_key = os.environ.get("OPENROUTER_API_KEY")
+def call_vision_api(parts: list, model_name: str = "llama-3.2-11b-vision-preview", json_mode: bool = False):
+    """Hits Groq API to get a highly reliable Free Vision Model."""
+    api_key = os.environ.get("GROQ_API_KEY")
     
     if not api_key:
-        raise RuntimeError("NO_OPENROUTER_KEY_FOUND_IN_ENV")
+        raise RuntimeError("NO_GROQ_KEY_FOUND_IN_ENV")
 
     client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
+        base_url="https://api.groq.com/openai/v1",
         api_key=api_key,
     )
 
-    # Format multimodal contents for OpenAI SDK standard
+    # Format multimodal contents for OpenAI/Groq SDK standard
     content_list = []
     for p in parts:
         if isinstance(p, str):
@@ -75,8 +75,8 @@ def call_vision_api(parts: list, model_name: str = "google/gemini-2.0-flash-exp:
         return result_text
 
     except Exception as e:
-        log.error(f"OpenRouter SDK call failed: {e}")
-        raise RuntimeError(f"OPENROUTER_SDK_FAILED: {e}")
+        log.error(f"Groq SDK call failed: {e}")
+        raise RuntimeError(f"GROQ_SDK_FAILED: {e}")
 
 
 # --------------------------------------------------------------------------
@@ -162,7 +162,7 @@ def health():
     return {
         "status": "ok",
         "time": datetime.now(timezone.utc).isoformat(),
-        "api_keys_configured": bool(os.environ.get("OPENROUTER_API_KEY")),
+        "api_keys_configured": bool(os.environ.get("GROQ_API_KEY")),
         "rulebook_docs": rulebook.count(),
     }
 
