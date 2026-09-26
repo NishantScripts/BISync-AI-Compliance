@@ -16,9 +16,8 @@ from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# Naya Official Google GenAI SDK
-from google import genai
-from google.genai import types
+# Using standard OpenAI SDK to call OpenRouter
+from openai import OpenAI
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("bisync")
@@ -37,52 +36,47 @@ app.add_middleware(
 )
 
 # --------------------------------------------------------------------------
-# New Google GenAI SDK Integration
+# OpenRouter API Integration (Bypassing Google Auth Issues)
 # --------------------------------------------------------------------------
-def call_gemini_direct(parts: list, model_name: str = "gemini-1.5-flash", json_mode: bool = False):
-    """Hits Google Gemini using the new official google-genai SDK."""
-    api_keys_str = os.environ.get("GEMINI_API_KEYS", "")
-    keys = [k.strip() for k in api_keys_str.split(",") if k.strip()]
+def call_vision_api(parts: list, model_name: str = "google/gemini-2.0-flash-exp:free", json_mode: bool = False):
+    """Hits OpenRouter API to get Gemini Vision without Google's token issues."""
+    api_key = os.environ.get("OPENROUTER_API_KEY")
     
-    if not keys:
-        raise RuntimeError("NO_GEMINI_API_KEY_FOUND_IN_ENV")
+    if not api_key:
+        raise RuntimeError("NO_OPENROUTER_KEY_FOUND_IN_ENV")
 
-    # Initialize the new SDK client
-    client = genai.Client(api_key=keys[0])
+    client = OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=api_key,
+    )
 
-    # Format multimodal contents for the new SDK
-    formatted_contents = []
+    # Format multimodal contents for OpenAI SDK standard
+    content_list = []
     for p in parts:
         if isinstance(p, str):
-            formatted_contents.append(p)
+            content_list.append({"type": "text", "text": p})
         elif isinstance(p, dict) and "data" in p:
             mime = p.get("mime_type", "image/jpeg")
-            img_bytes = base64.b64decode(p["data"])
-            formatted_contents.append(
-                types.Part.from_bytes(data=img_bytes, mime_type=mime)
-            )
-
-    # Setup config for JSON mode if requested
-    config = types.GenerateContentConfig(temperature=0.2)
-    if json_mode:
-        config.response_mime_type = "application/json"
+            content_list.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{mime};base64,{p['data']}"}
+            })
 
     try:
-        response = client.models.generate_content(
+        response = client.chat.completions.create(
             model=model_name,
-            contents=formatted_contents,
-            config=config
+            messages=[{"role": "user", "content": content_list}],
         )
         
-        result_text = response.text
+        result_text = response.choices[0].message.content
         if json_mode:
              result_text = result_text.replace("```json", "").replace("```", "").strip()
              
         return result_text
 
     except Exception as e:
-        log.error(f"GenAI SDK call failed: {e}")
-        raise RuntimeError(f"GENAI_SDK_FAILED: {e}")
+        log.error(f"OpenRouter SDK call failed: {e}")
+        raise RuntimeError(f"OPENROUTER_SDK_FAILED: {e}")
 
 
 # --------------------------------------------------------------------------
@@ -168,7 +162,7 @@ def health():
     return {
         "status": "ok",
         "time": datetime.now(timezone.utc).isoformat(),
-        "api_keys_configured": bool(os.environ.get("GEMINI_API_KEYS")),
+        "api_keys_configured": bool(os.environ.get("OPENROUTER_API_KEY")),
         "rulebook_docs": rulebook.count(),
     }
 
@@ -190,7 +184,7 @@ Respond with ONLY the JSON object, no markdown."""
 
         parts = [prompt, {"mime_type": file.content_type or "image/jpeg", "data": b64}]
         
-        raw = call_gemini_direct(parts, json_mode=True)
+        raw = call_vision_api(parts, json_mode=True)
         
         result = json.loads(raw)
         result["mode"] = "live"
@@ -216,7 +210,7 @@ summary (3 sentences, {"Hindi" if language == "hi" else "English"}).
 Respond with ONLY the JSON object, no markdown."""
 
         parts = [prompt, {"mime_type": "application/pdf", "data": b64}]
-        raw = call_gemini_direct(parts, json_mode=True)
+        raw = call_vision_api(parts, json_mode=True)
         result = json.loads(raw)
         result["mode"] = "live"
         result["hash"] = compliance_hash(result)
@@ -261,7 +255,7 @@ Use ONLY this retrieved context from the bis_rulebook database:
 
 User question: {req.message}"""
 
-        answer = call_gemini_direct([prompt], json_mode=False)
+        answer = call_vision_api([prompt], json_mode=False)
         return {
             "mode": "live",
             "answer": answer.strip(),
