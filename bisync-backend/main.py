@@ -157,7 +157,7 @@ def mock_scan_result(reason: str) -> dict:
 # --------------------------------------------------------------------------
 # Routes
 # --------------------------------------------------------------------------
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 def health():
     return {
         "status": "ok",
