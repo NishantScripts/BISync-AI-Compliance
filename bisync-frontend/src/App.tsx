@@ -98,7 +98,7 @@ const COPY: Record<string, any> = {
     pdfDrop: "BIS मैनुअल या लैब रिपोर्ट (PDF) डालें",
     pdfSub: "हम क्लॉज़, अनुपालन स्थिति और विसंगतियाँ निकालेंगे।",
     chatPlaceholder: "किसी भी भारतीय मानक के बारे में पूछें",
-    chatEmpty: "IS मानकों, CM/L नियमों या परीक्षण क्लॉज़ के बारे में BISync से पूछें।",
+    chatEmpty: "IS मानकों, CM/L नियमों या परीक्षण क्लॉज़ के बारे बारे में BISync से पूछें।",
     downloadReport: "ऑडिट रिपोर्ट डाउनलोड करें",
     noHistory: "अभी तक कोई स्कैन नहीं। निरीक्षण चलाएँ।",
     verdictPass: "अनुरूप", verdictCaution: "सत्यापन आवश्यक", verdictFail: "गैर-अनुरूप",
@@ -560,10 +560,21 @@ function Chatbot({ role, lang, t }: { role: Role; lang: Lang; t: any }) {
     setInput("");
     setThinking(true);
 
+    // MAPPING FIX: FastAPI backend expects `content` but frontend uses `text`
+    const historyPayload = messages.map((m) => ({
+      role: m.role,
+      content: m.text,
+    }));
+
     const mock = { mode: "mock_fallback", answer: MOCK_CHAT_REPLIES.default, sources: ["IS 9873"] };
     const { data, live } = await apiCall<typeof mock>(
       "/chat",
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text, language: lang, role }) },
+      { 
+        method: "POST", 
+        headers: { "Content-Type": "application/json" }, 
+        // MEMORY FIX: Added historyPayload here
+        body: JSON.stringify({ message: text, history: historyPayload, language: lang, role }) 
+      },
       mock
     );
     setLiveMode(live);
