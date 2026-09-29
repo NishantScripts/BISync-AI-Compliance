@@ -39,19 +39,19 @@ app.add_middleware(
 )
 
 # --------------------------------------------------------------------------
-# Multi-Model Smart Router (Load Balancing)
+# Multi-Model Smart Router (Updated with Latest Groq Models)
 # --------------------------------------------------------------------------
 def call_ai_api(parts: list, task_type: str = "vision", json_mode: bool = False):
-    """Hits Groq API routing to different models and API keys based on the task."""
+    """Hits Groq API routing to latest non-deprecated models based on the task."""
     
     if task_type == "pdf":
-        model_name = "llama3-70b-8192"
+        model_name = "openai/gpt-oss-120b"  # Updated latest model for PDF parsing
         api_key = os.environ.get("GROQ_API_KEY_PDF") or os.environ.get("GROQ_API_KEY")
     elif task_type == "chat":
-        model_name = "llama3-8b-8192"
+        model_name = "openai/gpt-oss-20b"   # Updated latest model for Chat
         api_key = os.environ.get("GROQ_API_KEY_CHAT") or os.environ.get("GROQ_API_KEY")
     else: 
-        model_name = "qwen/qwen3.8-27b"
+        model_name = "qwen/qwen3.8-27b"     # Multimodal / Vision model
         api_key = os.environ.get("GROQ_API_KEY")
 
     if not api_key:
@@ -276,19 +276,16 @@ Document Text:
 @app.post("/chat")
 def chat(req: ChatRequest):
     try:
-        # Vector RAG search - n_results ko 5 kar diya gaya hai for better context matching
         results = rulebook.query(query_texts=[req.message], n_results=5)
         docs = results.get("documents", [[]])[0]
         metas = results.get("metadatas", [[]])[0]
         
-        # Nayi database sources ('source' ya 'standard') ko format karna
         context = "\n\n".join(
             f"[Source: {m.get('source', m.get('standard', 'Unknown Document'))}] {d}" for d, m in zip(docs, metas)
         ) or "No directly matching standard found in the rulebook."
 
         persona = "a friendly plain-language safety guide" if req.role == "consumer" else "a technical BIS compliance auditor"
         
-        # UPDATED: The Strict Multilingual & Problem Statement Prompt
         system_prompt = f"""You are an expert BIS (Bureau of Indian Standards) AI Compliance Assistant built by Team CodeX99 for the SIH Grand Finale.
 You are acting as {persona}. Your goal is to provide accurate, context-aware, and source-backed information related to Indian Standards, Hallmarking rules, HUID, and BIS testing laboratories.
 
@@ -302,7 +299,6 @@ Always base your answers on the provided context and cite the relevant standard 
 
         messages = [{"role": "system", "content": system_prompt}]
         
-        # Chat history inject karna
         for msg in req.history[-5:]:
             messages.append({"role": msg.role, "content": msg.content})
             
@@ -310,7 +306,6 @@ Always base your answers on the provided context and cite the relevant standard 
 
         answer = call_ai_api(messages, task_type="chat", json_mode=False)
         
-        # Extract unique sources to send to frontend
         unique_sources = list(set([m.get("source", m.get("standard")) for m in metas if m.get("source") or m.get("standard")]))
         
         return {
