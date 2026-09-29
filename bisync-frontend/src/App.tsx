@@ -105,9 +105,6 @@ const COPY: Record<string, any> = {
   },
 };
 
-//
-// Mock fallbacks (demo resilience)
-//
 const MOCK_SCAN: ScanResult = {
   mode: "mock_fallback",
   product_category: "Two-Wheeler Helmet",
@@ -139,12 +136,9 @@ const MOCK_PDF: PdfResult = {
 };
 
 const MOCK_CHAT_REPLIES: Record<string, string> = {
-  default: "Based on IS 9873, children's toys must pass flammability testing (materials shouldn't burn faster than 30mm/second) and small-parts choke-hazard cylinder tests. I'm running on cached data right now - live AI will resume shortly.",
+  default: "Based on IS 9873, children's toys must pass flammability testing and small-parts choke-hazard cylinder tests. I'm running on cached data right now - live AI will resume shortly.",
 };
 
-//
-// API helper
-//
 async function apiCall<T>(path: string, options: RequestInit, mock: T, timeoutMs = 12000): Promise<{ data: T; live: boolean }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -160,9 +154,6 @@ async function apiCall<T>(path: string, options: RequestInit, mock: T, timeoutMs
   }
 }
 
-//
-// Download Report Handler Helper
-//
 async function handleDownloadReport(payloadData: any) {
   try {
     const res = await fetch(`${API_BASE}/download-report`, {
@@ -190,9 +181,6 @@ async function handleDownloadReport(payloadData: any) {
   }
 }
 
-//
-// Small building blocks
-//
 function VerdictBadge({ verdict, t }: { verdict: Verdict; t: any }) {
   const map = {
     PASS: { icon: ShieldCheck, cls: "text-emerald-400 border-emerald-400/40 bg-emerald-400/10", label: t.verdictPass },
@@ -255,6 +243,12 @@ function VisionInspector({ role, lang, t, onLogged }: { role: Role; lang: Lang; 
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (camActive && streamRef.current && videoRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+    }
+  }, [camActive]);
+
   const handleFile = (f: File) => {
     setFile(f);
     setPreview(URL.createObjectURL(f));
@@ -271,7 +265,6 @@ function VisionInspector({ role, lang, t, onLogged }: { role: Role; lang: Lang; 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
       streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
       setCamActive(true);
     } catch {
       setCamActive(false);
@@ -346,7 +339,7 @@ function VisionInspector({ role, lang, t, onLogged }: { role: Role; lang: Lang; 
         )}
         {camActive && (
           <div className="relative h-96 overflow-hidden rounded-xl bg-black">
-            <video ref={videoRef} autoPlay playsInline className="h-full w-full object-cover" />
+            <video ref={videoRef} autoPlay playsInline muted className="h-full w-full object-cover" />
             <div className="pointer-events-none absolute inset-8 rounded-lg border-2 border-cyan-400/60" />
             <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-3">
               <button onClick={captureFrame} className="flex items-center gap-2 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950">
