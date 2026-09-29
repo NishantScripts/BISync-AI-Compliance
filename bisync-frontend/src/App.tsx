@@ -6,11 +6,11 @@ import {
   Building2, User, Hash, Clock, FileSearch, Sparkles,
 } from "lucide-react";
 
-// ---------------------------------------------------------------------------
+//
 // Config
-// ---------------------------------------------------------------------------
+//
 const API_BASE = "https://bisync-ai-compliance.onrender.com";
-const TEAM_TAG = "Team CodeX99 · SIH26107";
+const TEAM_TAG = "Team CodeX99 SIH26107";
 
 type Role = "consumer" | "auditor";
 type Lang = "en" | "hi";
@@ -81,7 +81,7 @@ const COPY: Record<string, any> = {
     pdfDrop: "Drop a BIS manual or lab test report (PDF)",
     pdfSub: "We'll extract clauses, compliance status, and flag discrepancies.",
     chatPlaceholder: "Ask about any Indian Standard, e.g. \"flame-retardant rules for toys\"",
-    chatEmpty: "Ask BISync anything about IS standards — CM/L rules, tolerance limits, testing clauses.",
+    chatEmpty: "Ask BISync anything about IS standards, CM/L rules, tolerance limits, testing clauses.",
     downloadReport: "Download audit report",
     noHistory: "No scans yet. Run an inspection to see it here.",
     verdictPass: "COMPLIANT", verdictCaution: "NEEDS VERIFICATION", verdictFail: "NON-COMPLIANT",
@@ -93,21 +93,21 @@ const COPY: Record<string, any> = {
     cloud: { online: "क्लाउड लाइव", degraded: "कैश मोड", offline: "ऑफ़लाइन" },
     dropTitle: "उत्पाद की फ़ोटो डालें, या वेबकैम का उपयोग करें",
     dropSub: "हम ISI चिह्न, CM/L नंबर और उत्पाद श्रेणी की जांच BIS मानकों के अनुसार करेंगे।",
-    browse: "फ़ाइल चुनें", useCam: "वेबकैम उपयोग करें", capture: "फ़्रेम कैप्चर करें", stopCam: "कैमरा बंद करें",
+    browse: "फ़ाइल चुनें", useCam: "वेबकैम उपयोग करें", capture: "फ्रेम कैप्चर करें", stopCam: "कैमरा बंद करें",
     scanning: "bis_rulebook के विरुद्ध स्कैन हो रहा है...", scanAgain: "फिर से स्कैन करें",
     pdfDrop: "BIS मैनुअल या लैब रिपोर्ट (PDF) डालें",
     pdfSub: "हम क्लॉज़, अनुपालन स्थिति और विसंगतियाँ निकालेंगे।",
     chatPlaceholder: "किसी भी भारतीय मानक के बारे में पूछें",
-    chatEmpty: "IS मानकों, CM/L नियमों या परीक्षण क्लॉज़ के बारे बारे में BISync से पूछें।",
+    chatEmpty: "IS मानकों, CM/L नियमों या परीक्षण क्लॉज़ के बारे में BISync से पूछें।",
     downloadReport: "ऑडिट रिपोर्ट डाउनलोड करें",
     noHistory: "अभी तक कोई स्कैन नहीं। निरीक्षण चलाएँ।",
     verdictPass: "अनुरूप", verdictCaution: "सत्यापन आवश्यक", verdictFail: "गैर-अनुरूप",
   },
 };
 
-// ---------------------------------------------------------------------------
+//
 // Mock fallbacks (demo resilience)
-// ---------------------------------------------------------------------------
+//
 const MOCK_SCAN: ScanResult = {
   mode: "mock_fallback",
   product_category: "Two-Wheeler Helmet",
@@ -118,7 +118,7 @@ const MOCK_SCAN: ScanResult = {
   forgery_indicators: ["Slight font mismatch in CM/L stamp region"],
   verdict: "CAUTION",
   consumer_summary: "The ISI mark looks mostly genuine, but the certification number's font is slightly off. Verify the CM/L number on the BIS CARE portal before trusting this product.",
-  auditor_summary: "CM/L OCR confidence 62% — cross-check against the BIS Licence Database. Strap anchorage clause 7.3 not fully visible in frame.",
+  auditor_summary: "CM/L OCR confidence 62% - cross-check against the BIS Licence Database. Strap anchorage clause 7.3 not fully visible in frame.",
   confidence: 0.62,
   hash: "a83f9c21e0b7",
 };
@@ -139,12 +139,12 @@ const MOCK_PDF: PdfResult = {
 };
 
 const MOCK_CHAT_REPLIES: Record<string, string> = {
-  default: "Based on IS 9873, children's toys must pass flammability testing (materials shouldn't burn faster than 30mm/second) and small-parts choke-hazard cylinder tests. I'm running on cached data right now — live AI will resume shortly.",
+  default: "Based on IS 9873, children's toys must pass flammability testing (materials shouldn't burn faster than 30mm/second) and small-parts choke-hazard cylinder tests. I'm running on cached data right now - live AI will resume shortly.",
 };
 
-// ---------------------------------------------------------------------------
+//
 // API helper
-// ---------------------------------------------------------------------------
+//
 async function apiCall<T>(path: string, options: RequestInit, mock: T, timeoutMs = 12000): Promise<{ data: T; live: boolean }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -160,9 +160,39 @@ async function apiCall<T>(path: string, options: RequestInit, mock: T, timeoutMs
   }
 }
 
-// ---------------------------------------------------------------------------
+//
+// Download Report Handler Helper
+//
+async function handleDownloadReport(payloadData: any) {
+  try {
+    const res = await fetch(`${API_BASE}/download-report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        document_type: payloadData.product_category || payloadData.document_type || "Lab Report",
+        matched_standard: payloadData.matched_standard || "IS Standards",
+        overall_status: payloadData.verdict || payloadData.overall_status || "compliant",
+        summary: payloadData.consumer_summary || payloadData.summary || payloadData.auditor_summary || "Audit report summary."
+      })
+    });
+    if (!res.ok) throw new Error("Failed to download");
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'BISync_Audit_Report.txt';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    a.remove();
+  } catch (err) {
+    alert("Could not download report. Please try again.");
+  }
+}
+
+//
 // Small building blocks
-// ---------------------------------------------------------------------------
+//
 function VerdictBadge({ verdict, t }: { verdict: Verdict; t: any }) {
   const map = {
     PASS: { icon: ShieldCheck, cls: "text-emerald-400 border-emerald-400/40 bg-emerald-400/10", label: t.verdictPass },
@@ -188,7 +218,8 @@ function ConfidenceRing({ value }: { value: number }) {
       <svg viewBox="0 0 80 80" className="h-24 w-24 -rotate-90">
         <circle cx="40" cy="40" r="34" fill="none" stroke="rgba(148,163,184,0.15)" strokeWidth="6" />
         <circle
-          cx="40" cy="40" r="34" fill="none" stroke={color} strokeWidth="6" strokeLinecap="round"
+          cx="40" cy="40" r="34" fill="none" stroke={color} strokeWidth="6"
+          strokeLinecap="round"
           strokeDasharray={circumference} strokeDashoffset={offset}
           style={{ transition: "stroke-dashoffset 0.8s ease, stroke 0.8s ease", filter: `drop-shadow(0 0 6px ${color}66)` }}
         />
@@ -209,9 +240,9 @@ function GlassCard({ children, className = "" }: { children: React.ReactNode; cl
   );
 }
 
-// ---------------------------------------------------------------------------
+//
 // Vision Inspector Tab
-// ---------------------------------------------------------------------------
+//
 function VisionInspector({ role, lang, t, onLogged }: { role: Role; lang: Lang; t: any; onLogged: (e: AuditEntry) => void }) {
   const [preview, setPreview] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -313,7 +344,6 @@ function VisionInspector({ role, lang, t, onLogged }: { role: Role; lang: Lang; 
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
           </div>
         )}
-
         {camActive && (
           <div className="relative h-96 overflow-hidden rounded-xl bg-black">
             <video ref={videoRef} autoPlay playsInline className="h-full w-full object-cover" />
@@ -328,7 +358,6 @@ function VisionInspector({ role, lang, t, onLogged }: { role: Role; lang: Lang; 
             </div>
           </div>
         )}
-
         {preview && (
           <div className="relative h-96 overflow-hidden rounded-xl bg-black">
             <img src={preview} alt="scan target" className="h-full w-full object-contain" />
@@ -347,7 +376,6 @@ function VisionInspector({ role, lang, t, onLogged }: { role: Role; lang: Lang; 
             </button>
           </div>
         )}
-
         {preview && !result && !scanning && (
           <button onClick={runScan} className="mt-4 w-full rounded-lg bg-gradient-to-r from-cyan-500 to-blue-500 py-3 text-sm font-semibold text-slate-950 hover:opacity-90 transition-opacity">
             Run compliance scan
@@ -358,7 +386,6 @@ function VisionInspector({ role, lang, t, onLogged }: { role: Role; lang: Lang; 
             {t.scanAgain}
           </button>
         )}
-
         <style>{`@keyframes scanline { 0% { top: 0%; } 50% { top: 96%; } 100% { top: 0%; } }`}</style>
       </GlassCard>
 
@@ -377,15 +404,12 @@ function VisionInspector({ role, lang, t, onLogged }: { role: Role; lang: Lang; 
               </div>
               <ConfidenceRing value={result.confidence} />
             </div>
-
             <VerdictBadge verdict={result.verdict} t={t} />
-
             {!liveMode && (
               <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
                 <AlertTriangle size={14} /> Showing cached sample data — live API temporarily unreachable.
               </div>
             )}
-
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-lg border border-slate-700/60 bg-slate-900/40 p-3">
                 <p className="text-xs text-slate-500">ISI Mark</p>
@@ -397,30 +421,27 @@ function VisionInspector({ role, lang, t, onLogged }: { role: Role; lang: Lang; 
               <div className="rounded-lg border border-slate-700/60 bg-slate-900/40 p-3">
                 <p className="text-xs text-slate-500">CM/L Number</p>
                 <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-slate-200">
-                  <Hash size={14} /> {result.cml_number_detected ?? "—"}
+                  <Hash size={14} /> {result.cml_number_detected ?? "-"}
                 </p>
               </div>
             </div>
-
             {result.forgery_indicators.length > 0 && (
               <div className="rounded-lg border border-slate-700/60 bg-slate-900/40 p-3">
                 <p className="mb-2 text-xs uppercase tracking-wide text-slate-500">Forgery indicators</p>
                 <ul className="space-y-1.5">
                   {result.forgery_indicators.map((f, i) => (
                     <li key={i} className="flex items-start gap-2 text-sm text-slate-300">
-                      <AlertTriangle className="mt-0.5 shrink-0 text-amber-400" size={13} /> {f}
+                      <AlertTriangle className="mt-0.5 shrink-0 text-amber-400" size={13} />{f}
                     </li>
                   ))}
                 </ul>
               </div>
             )}
-
             <div className="rounded-lg bg-slate-900/40 p-3">
               <p className="text-xs uppercase tracking-wide text-slate-500 mb-1">{role === "consumer" ? "Plain-English verdict" : "Auditor notes"}</p>
               <p className="text-sm leading-relaxed text-slate-300">{role === "consumer" ? result.consumer_summary : result.auditor_summary}</p>
             </div>
-
-            <button className="flex items-center justify-center gap-2 rounded-lg border border-slate-600 py-2.5 text-sm text-slate-300 hover:border-cyan-400 hover:text-cyan-300 transition-colors">
+            <button onClick={() => handleDownloadReport(result)} className="flex items-center justify-center gap-2 rounded-lg border border-slate-600 py-2.5 text-sm text-slate-300 hover:border-cyan-400 hover:text-cyan-300 transition-colors">
               <Download size={15} /> {t.downloadReport}
             </button>
           </div>
@@ -430,9 +451,9 @@ function VisionInspector({ role, lang, t, onLogged }: { role: Role; lang: Lang; 
   );
 }
 
-// ---------------------------------------------------------------------------
+//
 // PDF Parser Tab
-// ---------------------------------------------------------------------------
+//
 function PdfParser({ role, lang, t, onLogged }: { role: Role; lang: Lang; t: any; onLogged: (e: AuditEntry) => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [parsing, setParsing] = useState(false);
@@ -494,9 +515,9 @@ function PdfParser({ role, lang, t, onLogged }: { role: Role; lang: Lang; t: any
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs uppercase tracking-wide text-slate-500">{result.matched_standard} · {result.document_type.replace("_", " ")}</p>
+                <p className="text-xs uppercase tracking-wide text-slate-500">{result.matched_standard} {result.document_type.replace("_", "")}</p>
                 <p className={`mt-1 text-sm font-semibold ${statusColor[result.overall_status]}`}>
-                  Overall: {result.overall_status.replace("_", " ")}
+                  Overall: {result.overall_status.replace("_", "")}
                 </p>
               </div>
             </div>
@@ -515,7 +536,7 @@ function PdfParser({ role, lang, t, onLogged }: { role: Role; lang: Lang; t: any
                     <tr key={i} className="border-t border-slate-700/40">
                       <td className="px-3 py-2 align-top text-slate-300">{c.clause_no}<br /><span className="text-xs text-slate-500">{c.title}</span></td>
                       <td className="px-3 py-2 align-top text-slate-400">{c.requirement}</td>
-                      <td className={`px-3 py-2 align-top font-medium ${statusColor[c.status]}`}>{c.status.replace("_", " ")}</td>
+                      <td className={`px-3 py-2 align-top font-medium ${statusColor[c.status]}`}>{c.status.replace("_", "")}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -530,7 +551,7 @@ function PdfParser({ role, lang, t, onLogged }: { role: Role; lang: Lang; t: any
               </div>
             )}
             <p className="text-sm leading-relaxed text-slate-300">{result.summary}</p>
-            <button className="flex items-center justify-center gap-2 rounded-lg border border-slate-600 py-2.5 text-sm text-slate-300 hover:border-cyan-400 hover:text-cyan-300">
+            <button onClick={() => handleDownloadReport(result)} className="flex items-center justify-center gap-2 rounded-lg border border-slate-600 py-2.5 text-sm text-slate-300 hover:border-cyan-400 hover:text-cyan-300 transition-colors">
               <Download size={15} /> {t.downloadReport}
             </button>
           </div>
@@ -540,9 +561,9 @@ function PdfParser({ role, lang, t, onLogged }: { role: Role; lang: Lang; t: any
   );
 }
 
-// ---------------------------------------------------------------------------
+//
 // Chatbot Tab
-// ---------------------------------------------------------------------------
+//
 function Chatbot({ role, lang, t }: { role: Role; lang: Lang; t: any }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
@@ -560,7 +581,6 @@ function Chatbot({ role, lang, t }: { role: Role; lang: Lang; t: any }) {
     setInput("");
     setThinking(true);
 
-    // MAPPING FIX: FastAPI backend expects `content` but frontend uses `text`
     const historyPayload = messages.map((m) => ({
       role: m.role,
       content: m.text,
@@ -569,11 +589,10 @@ function Chatbot({ role, lang, t }: { role: Role; lang: Lang; t: any }) {
     const mock = { mode: "mock_fallback", answer: MOCK_CHAT_REPLIES.default, sources: ["IS 9873"] };
     const { data, live } = await apiCall<typeof mock>(
       "/chat",
-      { 
-        method: "POST", 
-        headers: { "Content-Type": "application/json" }, 
-        // MEMORY FIX: Added historyPayload here
-        body: JSON.stringify({ message: text, history: historyPayload, language: lang, role }) 
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, history: historyPayload, language: lang, role })
       },
       mock
     );
@@ -589,14 +608,13 @@ function Chatbot({ role, lang, t }: { role: Role; lang: Lang; t: any }) {
           <div className="rounded-full bg-cyan-500/15 p-2"><MessageSquare className="text-cyan-400" size={18} /></div>
           <div>
             <p className="text-sm font-medium text-slate-100">BIS AI Chatbot</p>
-            <p className="text-xs text-slate-500">RAG over bis_rulebook · Gemini</p>
+            <p className="text-xs text-slate-500">RAG over bis_rulebook</p>
           </div>
         </div>
         {!liveMode && messages.length > 0 && (
           <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-300">Cache mode</span>
         )}
       </div>
-
       <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
         {messages.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-slate-500">
@@ -623,7 +641,6 @@ function Chatbot({ role, lang, t }: { role: Role; lang: Lang; t: any }) {
         )}
         <div ref={bottomRef} />
       </div>
-
       <div className="border-t border-slate-700/50 p-4">
         <div className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 focus-within:border-cyan-400/60">
           <input
@@ -642,21 +659,19 @@ function Chatbot({ role, lang, t }: { role: Role; lang: Lang; t: any }) {
   );
 }
 
-// ---------------------------------------------------------------------------
+//
 // Audit History Tab
-// ---------------------------------------------------------------------------
+//
 function AuditHistory({ entries, t }: { entries: AuditEntry[]; t: any }) {
   const passCount = entries.filter((e) => e.verdict === "PASS" || e.verdict === "compliant").length;
   const cautionCount = entries.filter((e) => e.verdict === "CAUTION" || e.verdict === "partial").length;
   const failCount = entries.filter((e) => e.verdict === "FAIL" || e.verdict === "non_compliant").length;
-
   const stats = [
     { label: "Total Inspections", value: entries.length, icon: BarChart3, color: "text-cyan-400" },
     { label: "Compliant", value: passCount, icon: CheckCircle2, color: "text-emerald-400" },
     { label: "Needs Verification", value: cautionCount, icon: ShieldAlert, color: "text-amber-400" },
     { label: "Non-Compliant", value: failCount, icon: ShieldX, color: "text-rose-400" },
   ];
-
   return (
     <div className="flex flex-col gap-6">
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -668,7 +683,6 @@ function AuditHistory({ entries, t }: { entries: AuditEntry[]; t: any }) {
           </GlassCard>
         ))}
       </div>
-
       <GlassCard className="p-6">
         <p className="mb-4 text-sm font-medium text-slate-200">Recent activity</p>
         {entries.length === 0 ? (
@@ -686,7 +700,7 @@ function AuditHistory({ entries, t }: { entries: AuditEntry[]; t: any }) {
                   </div>
                   <div>
                     <p className="text-sm text-slate-200">{e.label}</p>
-                    <p className="text-xs text-slate-500">{e.standard} · {new Date(e.timestamp).toLocaleString()}</p>
+                    <p className="text-xs text-slate-500">{e.standard} {new Date(e.timestamp).toLocaleString()}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -702,9 +716,9 @@ function AuditHistory({ entries, t }: { entries: AuditEntry[]; t: any }) {
   );
 }
 
-// ---------------------------------------------------------------------------
+//
 // Shell: Sidebar + Header
-// ---------------------------------------------------------------------------
+//
 function Sidebar({ tab, setTab, t }: { tab: Tab; setTab: (t: Tab) => void; t: any }) {
   const items: { id: Tab; icon: React.ElementType; label: string }[] = [
     { id: "vision", icon: Camera, label: t.tabs.vision },
@@ -715,9 +729,9 @@ function Sidebar({ tab, setTab, t }: { tab: Tab; setTab: (t: Tab) => void; t: an
   return (
     <aside className="flex w-64 shrink-0 flex-col border-r border-slate-800 bg-slate-950/60 px-4 py-6">
       <div className="mb-8 flex items-center gap-3 px-2">
-        <img 
-          src="https://i.ibb.co/ymTht2pS/20260922-202442.png" 
-          alt="BISync Logo" 
+        <img
+          src="https://i.ibb.co/ymTht2pS/20260922-202442.png"
+          alt="BISync Logo"
           className="h-10 w-10 rounded-xl object-cover shadow-sm border border-slate-700 bg-white"
         />
         <div>
@@ -741,7 +755,7 @@ function Sidebar({ tab, setTab, t }: { tab: Tab; setTab: (t: Tab) => void; t: an
         ))}
       </nav>
       <div className="mt-auto rounded-xl border border-slate-800 bg-slate-900/50 p-4">
-        <p className="text-xs text-slate-500 leading-relaxed">Guarding ₹1L+ crore in economic loss from counterfeit ISI marks — one scan at a time.</p>
+        <p className="text-xs text-slate-500 leading-relaxed">Guarding 1L+ crore in economic loss from counterfeit ISI marks one scan at a time.</p>
       </div>
     </aside>
   );
@@ -756,19 +770,16 @@ function Header({ role, setRole, lang, setLang, cloud, t }: {
     offline: { icon: WifiOff, cls: "text-rose-400", label: t.cloud.offline },
   }[cloud];
   const CloudIcon = cloudCfg.icon;
-
   return (
     <header className="flex items-center justify-between border-b border-slate-800 bg-slate-950/40 px-8 py-4">
       <div>
         <h1 className="text-lg font-semibold text-slate-100">{t.appName}</h1>
         <p className="text-xs text-slate-500">{t.tagline}</p>
       </div>
-
       <div className="flex items-center gap-5">
         <div className={`flex items-center gap-1.5 text-xs ${cloudCfg.cls}`}>
           <CloudIcon size={14} /> {cloudCfg.label}
         </div>
-
         <div className="flex rounded-lg border border-slate-700 bg-slate-900/60 p-0.5 text-xs">
           {(["en", "hi"] as Lang[]).map((l) => (
             <button key={l} onClick={() => setLang(l)} className={`rounded-md px-2.5 py-1.5 transition-colors ${lang === l ? "bg-cyan-500 text-slate-950" : "text-slate-400"}`}>
@@ -776,7 +787,6 @@ function Header({ role, setRole, lang, setLang, cloud, t }: {
             </button>
           ))}
         </div>
-
         <div className="flex rounded-lg border border-slate-700 bg-slate-900/60 p-0.5 text-xs">
           <button onClick={() => setRole("consumer")} className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 transition-colors ${role === "consumer" ? "bg-cyan-500 text-slate-950" : "text-slate-400"}`}>
             <User size={13} /> {t.roleConsumer}
@@ -790,16 +800,15 @@ function Header({ role, setRole, lang, setLang, cloud, t }: {
   );
 }
 
-// ---------------------------------------------------------------------------
+//
 // Root App
-// ---------------------------------------------------------------------------
+//
 export default function App() {
   const [tab, setTab] = useState<Tab>("vision");
   const [role, setRole] = useState<Role>("consumer");
   const [lang, setLang] = useState<Lang>("en");
   const [cloud, setCloud] = useState<CloudStatus>("online");
   const [history, setHistory] = useState<AuditEntry[]>([]);
-
   const t = COPY[lang];
 
   useEffect(() => {
