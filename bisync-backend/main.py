@@ -10,9 +10,9 @@ import time
 import base64
 import hashlib
 import logging
-import re  # Naya import JSON parsing ke liye
+import re  
 from datetime import datetime, timezone
-from typing import List  # Naya import memory ke liye
+from typing import List  
 import PyPDF2
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
@@ -62,7 +62,6 @@ def call_ai_api(parts: list, task_type: str = "vision", json_mode: bool = False)
         api_key=api_key,
     )
 
-    # Chat ke liye parts ko hi direct messages array maan lenge
     if task_type == "chat":
         messages = parts
     elif task_type == "pdf":
@@ -137,7 +136,6 @@ seed_rulebook_if_empty()
 # --------------------------------------------------------------------------
 # Models & Helpers
 # --------------------------------------------------------------------------
-# UPDATE 1: Memory support ke liye ChatMessage aur history add kiya
 class ChatMessage(BaseModel):
     role: str
     content: str
@@ -152,7 +150,6 @@ class QueryRuleRequest(BaseModel):
     query: str
     n_results: int = 3
 
-# UPDATE 2: Safe JSON parsing function
 def extract_safe_json(text: str) -> dict:
     """Finds the first valid JSON block to avoid LLM hallucination crashes."""
     try:
@@ -219,7 +216,6 @@ Respond with ONLY the JSON object, no markdown."""
         
         raw = call_ai_api(parts, task_type="vision", json_mode=True)
         
-        # Safe JSON extractor use kiya
         result = extract_safe_json(raw)
         result["mode"] = "live"
         result["hash"] = compliance_hash(result)
@@ -255,7 +251,6 @@ Document Text:
 """
         raw = call_ai_api([prompt], task_type="pdf", json_mode=True)
         
-        # Safe JSON extractor use kiya
         result = extract_safe_json(raw)
         result["mode"] = "live"
         result["hash"] = compliance_hash(result)
@@ -281,39 +276,47 @@ Document Text:
 @app.post("/chat")
 def chat(req: ChatRequest):
     try:
-        # Vector RAG search
-        results = rulebook.query(query_texts=[req.message], n_results=3)
+        # Vector RAG search - n_results ko 5 kar diya gaya hai for better context matching
+        results = rulebook.query(query_texts=[req.message], n_results=5)
         docs = results.get("documents", [[]])[0]
         metas = results.get("metadatas", [[]])[0]
-        context = "\n".join(
-            f"[{m.get('standard')}] {d}" for d, m in zip(docs, metas)
+        
+        # Nayi database sources ('source' ya 'standard') ko format karna
+        context = "\n\n".join(
+            f"[Source: {m.get('source', m.get('standard', 'Unknown Document'))}] {d}" for d, m in zip(docs, metas)
         ) or "No directly matching standard found in the rulebook."
 
         persona = "a friendly plain-language safety guide" if req.role == "consumer" else "a technical BIS compliance auditor"
-        lang_instruction = "Respond in Hindi." if req.language == "hi" else "Respond in English."
+        
+        # UPDATED: The Strict Multilingual & Problem Statement Prompt
+        system_prompt = f"""You are an expert BIS (Bureau of Indian Standards) AI Compliance Assistant built by Team CodeX99 for the SIH Grand Finale.
+You are acting as {persona}. Your goal is to provide accurate, context-aware, and source-backed information related to Indian Standards, Hallmarking rules, HUID, and BIS testing laboratories.
 
-        # System prompt with context
-        system_prompt = f"""You are BISync's AI assistant, {persona}, answering questions about Indian Standards (BIS).
+CRITICAL INSTRUCTION: You MUST strictly reply in the exact language the user queries in. If the user asks in Hindi, reply entirely in Hindi. If the user asks in English, reply entirely in English. Do not mix languages unless citing official acronyms or IS numbers.
+
 Use ONLY this retrieved context from the bis_rulebook database:
 ---
 {context}
 ---
-{lang_instruction} Be concise (max 4 sentences) and cite the IS standard number where relevant."""
+Always base your answers on the provided context and cite the relevant standard numbers, lab names, or rules."""
 
-        # UPDATE 3: Memory Inject karna
         messages = [{"role": "system", "content": system_prompt}]
         
-        for msg in req.history[-5:]: # Aakhiri 5 messages yaad rakhega (token bachane ke liye)
+        # Chat history inject karna
+        for msg in req.history[-5:]:
             messages.append({"role": msg.role, "content": msg.content})
             
         messages.append({"role": "user", "content": req.message})
 
         answer = call_ai_api(messages, task_type="chat", json_mode=False)
         
+        # Extract unique sources to send to frontend
+        unique_sources = list(set([m.get("source", m.get("standard")) for m in metas if m.get("source") or m.get("standard")]))
+        
         return {
             "mode": "live",
             "answer": answer.strip(),
-            "sources": list(set([m.get("standard") for m in metas if m.get("standard")])),
+            "sources": unique_sources,
         }
 
     except Exception as e:
@@ -335,7 +338,7 @@ def query_rule(req: QueryRuleRequest):
         return {
             "mode": "live",
             "results": [
-                {"standard": m.get("standard"), "product": m.get("product"), "text": d, "relevance": 1 - dist}
+                {"standard": m.get("source", m.get("standard")), "product": m.get("category", m.get("product")), "text": d, "relevance": 1 - dist}
                 for d, m, dist in zip(docs, metas, dists)
             ],
         }
