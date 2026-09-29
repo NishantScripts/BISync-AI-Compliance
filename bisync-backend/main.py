@@ -10,7 +10,9 @@ import time
 import base64
 import hashlib
 import logging
+import re  # Naya import JSON parsing ke liye
 from datetime import datetime, timezone
+from typing import List  # Naya import memory ke liye
 import PyPDF2
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
@@ -60,7 +62,10 @@ def call_ai_api(parts: list, task_type: str = "vision", json_mode: bool = False)
         api_key=api_key,
     )
 
-    if task_type in ["pdf", "chat"]:
+    # Chat ke liye parts ko hi direct messages array maan lenge
+    if task_type == "chat":
+        messages = parts
+    elif task_type == "pdf":
         messages = [{"role": "user", "content": parts[0]}]
     else:
         content_list = []
@@ -111,7 +116,6 @@ STANDARDS_SEED = [
     {"id": "IS9873", "text": "IS 9873: Safety of toys, including mechanical/physical hazards, flammability limits, and migration of certain elements for children's toys.", "meta": {"standard": "IS 9873", "product": "Toys"}},
     {"id": "IS16046", "text": "IS 16046: Safety requirements for secondary lithium-ion cells and batteries used in portable applications, covering thermal abuse and short-circuit tests.", "meta": {"standard": "IS 16046", "product": "Li-ion Batteries"}},
     {"id": "IS8828", "text": "IS 8828: Miniature circuit breakers (MCBs) for AC circuits. Specifies tripping characteristics, breaking capacity, and endurance requirements.", "meta": {"standard": "IS 8828", "product": "MCBs"}},
-    # Naya data Judges ke questions solve karne ke liye
     {"id": "SCHEME_CRS", "text": "Compulsory Registration Scheme (CRS) is operated by BIS under Scheme-II of Schedule-II for electronics and IT goods. Manufacturers must register before launching products.", "meta": {"standard": "CRS Scheme", "product": "Electronics"}},
     {"id": "SCHEME_FMCS", "text": "Foreign Manufacturers Certification Scheme (FMCS) allows overseas manufacturers to use the standard ISI mark on their products. The process involves factory audit and testing.", "meta": {"standard": "FMCS Scheme", "product": "Imports"}},
     {"id": "HALLMARKING", "text": "BIS Hallmarking scheme for Gold (IS 1417) and Silver (IS 2112) guarantees purity. It includes the BIS logo, purity grade (e.g., 22K916), and a 6-digit alphanumeric HUID code.", "meta": {"standard": "IS 1417", "product": "Jewellery Hallmarking"}},
@@ -133,14 +137,34 @@ seed_rulebook_if_empty()
 # --------------------------------------------------------------------------
 # Models & Helpers
 # --------------------------------------------------------------------------
+# UPDATE 1: Memory support ke liye ChatMessage aur history add kiya
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
 class ChatRequest(BaseModel):
     message: str
+    history: List[ChatMessage] = []  
     language: str = "en"
     role: str = "consumer"
 
 class QueryRuleRequest(BaseModel):
     query: str
     n_results: int = 3
+
+# UPDATE 2: Safe JSON parsing function
+def extract_safe_json(text: str) -> dict:
+    """Finds the first valid JSON block to avoid LLM hallucination crashes."""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except:
+                pass
+    raise ValueError("Valid JSON not found in LLM response")
 
 def compliance_hash(payload: dict) -> str:
     raw = json.dumps(payload, sort_keys=True).encode()
@@ -195,7 +219,8 @@ Respond with ONLY the JSON object, no markdown."""
         
         raw = call_ai_api(parts, task_type="vision", json_mode=True)
         
-        result = json.loads(raw)
+        # Safe JSON extractor use kiya
+        result = extract_safe_json(raw)
         result["mode"] = "live"
         result["hash"] = compliance_hash(result)
         return result
@@ -209,7 +234,6 @@ async def parse_pdf(file: UploadFile = File(...), role: str = Form("auditor"), l
     try:
         pdf_bytes = await file.read()
         
-        # PyPDF2 se PDF ka actual text nikalna
         pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
         extracted_text = ""
         for page in pdf_reader.pages:
@@ -230,7 +254,9 @@ Document Text:
 {extracted_text[:6000]}
 """
         raw = call_ai_api([prompt], task_type="pdf", json_mode=True)
-        result = json.loads(raw)
+        
+        # Safe JSON extractor use kiya
+        result = extract_safe_json(raw)
         result["mode"] = "live"
         result["hash"] = compliance_hash(result)
         return result
@@ -255,6 +281,7 @@ Document Text:
 @app.post("/chat")
 def chat(req: ChatRequest):
     try:
+        # Vector RAG search
         results = rulebook.query(query_texts=[req.message], n_results=3)
         docs = results.get("documents", [[]])[0]
         metas = results.get("metadatas", [[]])[0]
@@ -265,20 +292,28 @@ def chat(req: ChatRequest):
         persona = "a friendly plain-language safety guide" if req.role == "consumer" else "a technical BIS compliance auditor"
         lang_instruction = "Respond in Hindi." if req.language == "hi" else "Respond in English."
 
-        prompt = f"""You are BISync's AI assistant, {persona}, answering questions about Indian Standards (BIS).
+        # System prompt with context
+        system_prompt = f"""You are BISync's AI assistant, {persona}, answering questions about Indian Standards (BIS).
 Use ONLY this retrieved context from the bis_rulebook database:
 ---
 {context}
 ---
-{lang_instruction} Be concise (max 4 sentences) and cite the IS standard number where relevant.
+{lang_instruction} Be concise (max 4 sentences) and cite the IS standard number where relevant."""
 
-User question: {req.message}"""
+        # UPDATE 3: Memory Inject karna
+        messages = [{"role": "system", "content": system_prompt}]
+        
+        for msg in req.history[-5:]: # Aakhiri 5 messages yaad rakhega (token bachane ke liye)
+            messages.append({"role": msg.role, "content": msg.content})
+            
+        messages.append({"role": "user", "content": req.message})
 
-        answer = call_ai_api([prompt], task_type="chat", json_mode=False)
+        answer = call_ai_api(messages, task_type="chat", json_mode=False)
+        
         return {
             "mode": "live",
             "answer": answer.strip(),
-            "sources": [m.get("standard") for m in metas],
+            "sources": list(set([m.get("standard") for m in metas if m.get("standard")])),
         }
 
     except Exception as e:
